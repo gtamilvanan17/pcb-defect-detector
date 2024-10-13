@@ -1,0 +1,276 @@
+\
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-+0n0xVW2eSR5OomGNYDnhzAbDsOXxcvSN1TPprVMTNDbiYZCxYbOOl7+AMvyTG2x" crossorigin="anonymous">
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@700&display=swap" rel="stylesheet">
+    <link rel="icon" href="assets/dd-logo.png">
+    <title>PCB Defect Detection</title>
+    <style>
+        * {
+            margin: 0;
+            box-sizing: border-box;
+            font-family: 'Titillium Web', sans-serif;
+            font-weight: 600;
+        }
+
+        .title {
+            font-family: 'Titillium Web', sans-serif;
+            padding-left: 10px;
+        }
+
+        #brand {
+            font-weight: 700;
+            font-family: 'Rubik';
+        }
+
+        #detect {
+            font-weight: 600;
+        }
+
+        body {
+            background: rgb(160, 12, 213);
+            background: linear-gradient(0deg, rgba(160, 12, 213, 1) 0%, rgba(11, 93, 214, 1) 100%) no-repeat center fixed;
+        }
+
+        .yellow {
+            color: #d38c09;
+        }
+
+        .red {
+            color: rgb(156, 34, 61);
+        }
+
+        .orange {
+            color: rgb(230, 105, 3);
+        }
+
+        .content-align {
+            display: flex;
+            align-items: center;
+        }
+
+        p {
+            font-size: 1.2em;
+            font-weight: 400;
+        }
+
+        #main {
+            margin-top: 40px;
+        }
+
+        @media (min-width: 992px) {
+            #inputimg {
+                width: 60%;
+            }
+
+            #main {
+                margin-top: 60px;
+            }
+        }
+
+        /* Style for uploaded image */
+        #uploadedImage img {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            /* Maintain aspect ratio */
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar navbar-dark justify-content-center"
+        style="background-color: #ffffff; border-radius: 4px; max-width: 60%; margin: 20px auto;">
+        <a class="navbar-brand title" id="brand" href="#" style="display: flex; align-items: center;">
+            <img src="assets/dd-logo.png" width="30" height="30" class="d-inline-block align-top" alt="logo"
+                style="margin-right: 10px;">
+            <span style="color:#0b5dd6"><b>PCB Defect-</span><span style="color:#a00cd5">Detection</b></span>
+        </a>
+    </nav>
+
+    <div class="container" id="main">
+        <div class="row justify-content-center">
+            <div class="col-lg-10 col-md-12">
+                <div class="card m-4">
+                    <div class="card-body" id="box-cont">
+                        <h3 class="card-title py-3 title" id="detect">Detect whether your Source PCB has defects or not.
+                        </h3>
+                        <p class="px-3 content-align">To identify your products has defects or not, either use your web
+                            camera and present the board or upload an image from your device.</p>
+                        <label for="webcam" class="ps-3 pt-3 pb-3">USE WEBCAM:</label>
+                        <button id="webcam" type="button" class="btn btn-outline-primary ms-3"
+                            onclick="useWebcam()">Start webcam</button><br />
+                        <label class="p-3" for="fruitimg">UPLOAD IMAGE:</label>
+                        <div class="input-group px-3 pb-3" id="inputimg">
+                            <input type="file" class="form-control" accept="image/*" id="fruitimg">
+                            <button class="btn btn-outline-primary" id="loadBtn">Load</button>
+                            <button class="btn btn-outline-secondary" id="resetBtn">Reset</button>
+                        </div>
+                        <div id="webcam-container" class="px-3"></div>
+                        <div id="uploadedImage" class="px-3"></div>
+                        <div id="label-container" class="px-3 pt-3"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+        <script
+            src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+        <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
+        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+        <script>
+            Parse.initialize("60VNGO1KuSO1vNwaely4izxBtFnZKN1afnnqEQ18", "Z2u2ZPl06gxcdbxzfqk2vgEyQI0744aipH9nq5vu");
+            Parse.serverURL = 'https://parseapi.back4app.com/';
+
+            let modelURL = "https://teachablemachine.withgoogle.com/models/N58PlX_GN/";
+
+            let model, webcam, newlabel, labelContainer, maxPredictions, camera_on = false, image_upload = false, img;
+
+            async function loadModel() {
+                const model_path = modelURL + "model.json";
+                const metadata_path = modelURL + "metadata.json";
+
+                // Load the model and metadata
+                model = await tmImage.load(model_path, metadata_path);
+                maxPredictions = model.getTotalClasses();
+                labelContainer = document.getElementById("label-container");
+                newlabel = document.createElement("div"); // Initialize newlabel
+                labelContainer.appendChild(newlabel); // Append to labelContainer
+            }
+
+            function useWebcam() {
+                camera_on = !camera_on;
+
+                if (camera_on) {
+                    init();
+                    document.getElementById("webcam").innerHTML = "Close Webcam";
+                } else {
+                    stopWebcam();
+                    document.getElementById("webcam").innerHTML = "Start Webcam";
+                }
+            }
+
+            async function stopWebcam() {
+                await webcam.stop();
+                document.getElementById("webcam-container").removeChild(webcam.canvas);
+                labelContainer.innerHTML = ""; // Clear label
+                newlabel = null; // Reset newlabel
+            }
+
+            async function init() {
+                await loadModel(); // Ensure model is loaded before using
+                const flip = true; // whether to flip the webcam
+                webcam = new tmImage.Webcam(200, 200, flip); // width, height, flip
+                await webcam.setup(); // request access to the webcam
+                await webcam.play();
+                window.requestAnimationFrame(loop);
+
+                // Append element to the DOM
+                document.getElementById("webcam-container").appendChild(webcam.canvas);
+            }
+
+            async function loop() {
+                webcam.update(); // Update the webcam frame
+                await predict(webcam.canvas);
+                window.requestAnimationFrame(loop);
+            }
+
+            async function predict(input) {
+                if (!model) {
+                    console.error("Model is not loaded.");
+                    return; // Exit if model is not loaded
+                }
+
+                // Predict can take in an image, video or canvas HTML element
+                const prediction = await model.predict(input);
+
+                var highestVal = 0.00;
+                var bestClass = "";
+                for (let i = 0; i < maxPredictions; i++) {
+                    var classPrediction = prediction[i].probability.toFixed(2);
+                    if (classPrediction > highestVal) {
+                        highestVal = classPrediction;
+                        bestClass = prediction[i].className;
+                    }
+                }
+
+                if (bestClass) {
+                    newlabel.className = highestVal > 0.5 ? "alert alert-success" : "alert alert-danger";
+                    newlabel.innerHTML = bestClass;
+                }
+            }
+
+            async function getPredictions() {
+                if (!img || !model) {
+                    console.error("Image or model not loaded.");
+                    return; // Exit if image or model is not loaded
+                }
+
+                // Prepare the canvas for predictions
+                const canvas = document.createElement("canvas");
+                const context = canvas.getContext("2d");
+                canvas.width = img.width;
+                canvas.height = img.height;
+
+                // Draw the image onto the canvas
+                context.drawImage(img, 0, 0);
+                await predict(canvas);
+            }
+
+            $(document).ready(function () {
+                $("#loadBtn").on("click", function () {
+                    const fileInput = document.getElementById("fruitimg");
+                    if (fileInput.files.length > 0) {
+                        const file = fileInput.files[0];
+                        img = new Image();
+                        const objectURL = URL.createObjectURL(file); // Create object URL
+
+                        img.src = objectURL; // Use the object URL as the source
+                        img.onload = async function () {
+                            img.width = 100; // Set preview width
+                            img.height = 100; // Set preview height
+                            const imgElement = document.createElement("img");
+                            imgElement.src = img.src;
+
+                            document.getElementById("uploadedImage").innerHTML = ""; // Clear previous image
+                            document.getElementById("uploadedImage").appendChild(imgElement);
+                            await getPredictions(); // Call getPredictions to update predictions
+                        };
+                        img.onerror = function () {
+                            console.error("Failed to load image");
+                        };
+                    } else {
+                        alert("Please upload an image!");
+                    }
+                });
+
+                // Reset functionality for file upload
+                $("#resetBtn").on("click", function () {
+                    // Clear the file input
+                    $("#fruitimg").val('');
+                    // Remove the uploaded image and canvas
+                    document.getElementById("uploadedImage").innerHTML = "";
+                    labelContainer.innerHTML = ""; // Clear predictions
+                    newlabel = document.createElement("div"); // Recreate newlabel
+                    labelContainer.appendChild(newlabel); // Append to labelContainer
+                });
+            });
+
+            // Load the model when the page is loaded
+            window.onload = loadModel;
+        </script>
+    </div>
+</body>
+
+</html>
