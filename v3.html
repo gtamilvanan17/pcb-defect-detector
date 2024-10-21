@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-+0n0xVW2eSR5OomGNYDnhzAbDsOXxcvSN1TPprVMTNDbiYZCxYbOOl7+AMvyTG2x" crossorigin="anonymous">
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@700&display=swap" rel="stylesheet">
+    <title>AI Defect Detection</title>
+    <style type="text/css">
+        body,
+        html {
+            height: 100%;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #87CEEB;
+        }
+
+        .container {
+            display: none;
+        }
+
+        .box-container {
+            box-shadow: 6px 11px 20px 7px rgba(0, 0, 0, 0.2);
+            padding: 30px 30px 40px 20px;
+            /* Top, right, bottom, left */
+            border-radius: 20px;
+            background-color: white;
+            max-width: 400px;
+            width: 100%;
+            margin: 20px;
+        }
+
+        #login-prompt {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0px 0px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        #password-input {
+            padding: 10px;
+            font-size: 16px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            margin-bottom: 10px;
+            width: 100%;
+        }
+
+        .pt-3 {
+            padding-top: 1rem !important;
+            display: flex;
+        }
+
+        .py-3 {
+            padding-top: 1rem !important;
+            display: flex;
+            justify-content: center;
+        }
+
+        .predict-center {
+            display: flex;
+            justify-content: center;
+        }
+
+        .px-3 {
+            justify-content: center;
+            display: grid;
+        }
+
+        @media (min-width: 768px) {
+            .box-container {
+                padding: 40px 30px 50px 30px;
+                /* Adjust padding for larger screens */
+            }
+        }
+
+        @media (min-width: 992px) {
+            .box-container {
+                padding: 50px 40px 60px 40px;
+                /* Adjust padding for larger screens */
+                max-width: 500px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Login prompt -->
+    <div class="box-container" id="login-prompt">
+        <h2>Please enter the password:</h2>
+        <input type="password" id="password-input" placeholder="Password" onkeypress="handleKeyPress(event)">
+        <button class="btn btn-primary mt-2" onclick="checkPassword()">Submit</button>
+    </div>
+
+    <!-- Main content -->
+    <div class="container box-container" id="main">
+        <div class="row justify-content-center">
+            <div class="col-lg-10 col-md-12">
+                <h3 class="card-title py-3 title" id="detect">AI Defect Detection</h3>
+                <div id="webcam-label-container" class="px-3">
+                    <div id="webcam-container"></div>
+                    <div id="label-container" class="pt-3 predict-center"></div>
+                </div>
+                <div class="pt-3">
+                    <button id="webcam" type="button" class="btn btn-outline-primary ms-3" onclick="useWebcam()">Start
+                        Webcam</button>
+                    <button type="button" class="btn btn-outline-secondary ms-3"
+                        onclick="togglePauseResume()">Pause/Resume</button>
+                    <button type="button" class="btn btn-outline-danger ms-3" onclick="stopBuzzer()">Stop
+                        Buzzer</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Audio element for buzzer sound -->
+        <audio id="buzzer" preload="auto">
+            <source src="assets/ringtone.mp3" type="audio/mpeg">
+            Your browser does not support the audio element.
+        </audio>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <script>
+        const PASSWORD = "123"; // Password for accessing the system
+        let model, webcam, labelContainer, maxPredictions, buzzerSound;
+        let isProcessRunning = false;
+        let isProcessPaused = false;
+        let camera_on = false;
+
+        // Function to check password and show main content if correct
+        function checkPassword() {
+            const enteredPassword = document.getElementById("password-input").value;
+            if (enteredPassword === PASSWORD) {
+                document.getElementById("login-prompt").style.display = 'none';
+                document.getElementById("main").style.display = 'block'; // Show content
+            } else {
+                alert("Incorrect password. Please try again.");
+            }
+        }
+
+        // Handle key press event for password input
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                checkPassword();
+            }
+        }
+
+        // Toggle camera on/off and set button text
+        function useWebcam() {
+            camera_on = !camera_on;
+
+            if (camera_on) {
+                init();
+                document.getElementById("webcam").innerHTML = "Close Webcam";
+            }
+            else {
+                stopWebcam();
+                document.getElementById("webcam").innerHTML = "Start Webcam";
+            }
+        }
+
+        // Function to initialize the model and webcam
+        async function init() {
+            const URL = "https://teachablemachine.withgoogle.com/models/N58PlX_GN/";
+            const modelURL = URL + "model.json";
+            const metadataURL = URL + "metadata.json";
+
+            // Load the model
+            model = await tmImage.load(modelURL, metadataURL);
+            maxPredictions = model.getTotalClasses();
+
+            // Set up the webcam
+            const flip = true;
+            webcam = new tmImage.Webcam(200, 200, flip);
+            await webcam.setup();
+            await webcam.play();
+            window.requestAnimationFrame(loop);
+
+            document.getElementById("webcam-container").appendChild(webcam.canvas);
+            labelContainer = document.getElementById("label-container");
+            buzzerSound = document.getElementById("buzzer");
+        }
+
+        // Function to stop the webcam
+        async function stopWebcam() {
+            if (webcam) {
+                await webcam.stop();
+                document.getElementById("webcam-container").removeChild(webcam.canvas);
+            }
+        }
+
+        // Function to pause/resume the process
+        function togglePauseResume() {
+            isProcessPaused = !isProcessPaused;
+            if (!isProcessPaused) {
+                loop();
+            }
+        }
+
+        // Function to stop the buzzer
+        function stopBuzzer() {
+            if (buzzerSound) {
+                buzzerSound.pause();
+                buzzerSound.currentTime = 0;
+            }
+        }
+
+        // Continuous prediction loop
+        async function loop() {
+            if (!isProcessPaused) {
+                webcam.update();
+                await predict(webcam.canvas);
+                window.requestAnimationFrame(loop);
+            }
+        }
+        async function predict(input) {
+            const prediction = await model.predict(input);
+            let highestVal = 0.00;
+            let bestClass = "";
+
+            for (let i = 0; i < maxPredictions; i++) {
+                let classPrediction = prediction[i].probability.toFixed(2);
+                if (classPrediction > highestVal) {
+                    highestVal = classPrediction;
+                    bestClass = prediction[i].className;
+                }
+            }
+
+            const newLabel = document.createElement("div");
+
+            // Check for specific classes and display custom messages
+            if (bestClass === "Rotten Banana") {
+                bestClass = "No Objects detected";
+            }
+
+            if (bestClass === "Fresh Apple" || bestClass === "Rotten Apple") {
+                newLabel.className = "alert alert-success";
+            } else {
+                newLabel.className = "alert alert-danger";
+            }
+
+            newLabel.innerHTML = bestClass;
+            labelContainer.innerHTML = ''; // Clear previous label
+            labelContainer.appendChild(newLabel);
+        }
+
+    </script>
+</body>
+
+</html>
