@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="shortcut icon" href="https://cdn-icons-png.flaticon.com/512/15724/15724615.png">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-+0n0xVW2eSR5OomGNYDnhzAbDsOXxcvSN1TPprVMTNDbiYZCxYbOOl7+AMvyTG2x" crossorigin="anonymous">
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@700&display=swap" rel="stylesheet">
+    <title>AI Clamp Identification</title>
+    <style type="text/css">
+        body,
+        html {
+            height: 100%;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #87CEEB;
+        }
+
+        .container {
+            display: block;
+        }
+
+        .box-container {
+            box-shadow: 6px 11px 20px 7px rgba(0, 0, 0, 0.2);
+            padding: 5px 20px 30px 20px;
+            border-radius: 20px;
+            background-color: white;
+            max-width: 400px;
+            width: 100%;
+            transition: background-color 0.3s ease;
+        }
+
+        .manual-style {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .pt-3 {
+            padding-top: 1rem !important;
+            display: flex;
+        }
+
+        .py-3 {
+            padding-top: 1rem !important;
+            display: flex;
+            justify-content: center;
+        }
+
+        .predict-center {
+            display: flex;
+            justify-content: center;
+        }
+
+        .px-3 {
+            justify-content: center;
+            display: grid;
+        }
+
+        button {
+            transition: background-color 0.3s ease, color 0.3s ease; /* Smooth transition for buttons */
+        }
+
+        @media (min-width: 768px) {
+            .box-container {
+                padding: 40px 30px 50px 30px;
+            }
+        }
+
+        @media (min-width: 992px) {
+            .box-container {
+                padding: 50px 40px 60px 40px;
+                max-width: 500px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Main content -->
+    <div class="container box-container" id="main">
+        <div class="manual-style">
+            <h3 class="card-title py-3 title" id="detect">AI Clamp Identification</h3>
+        </div>
+        <div id="webcam-label-container" class="px-3">
+            <div id="webcam-container"></div>
+            <div id="label-container" class="pt-3 predict-center"></div>
+        </div>
+        <div>
+            <button id="webcam" type="button" class="btn btn-outline-primary ms-3" onclick="useWebcam()">Start
+                Webcam</button>
+            <button type="button" class="btn btn-outline-danger ms-3" onclick="stopBuzzer()">Stop Buzzer</button>
+        </div>
+
+        <!-- Audio element for buzzer sound -->
+        <audio id="buzzer" preload="auto">
+            <source src="assets/buzzer-alarm.mp3" type="audio/mpeg">
+            Your browser does not support the audio element.
+        </audio>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <script>
+        let model, webcam, labelContainer, maxPredictions, buzzerSound;
+        let camera_on = false;
+        let isLoopActive = false; // Flag to control prediction loop
+        let isScanning = false; // Flag for scanning delay
+
+        // Toggle camera on/off and set button text
+        function useWebcam() {
+            camera_on = !camera_on;
+
+            if (camera_on) {
+                init();
+                document.getElementById("webcam").innerHTML = "Close Webcam";
+            }
+            else {
+                stopWebcam();
+                document.getElementById("webcam").innerHTML = "Start Webcam";
+            }
+        }
+
+        // Function to initialize the model and webcam
+        async function init() {
+            const URL = "https://teachablemachine.withgoogle.com/models/Tl23HqtYe/";
+            const modelURL = URL + "model.json";
+            const metadataURL = URL + "metadata.json";
+
+            // Load the model
+            model = await tmImage.load(modelURL, metadataURL);
+            maxPredictions = model.getTotalClasses();
+
+            // Set up the webcam
+            const flip = true;
+            webcam = new tmImage.Webcam(200, 200, flip);
+            await webcam.setup();
+            await webcam.play();
+            isLoopActive = true; // Activate the loop
+            window.requestAnimationFrame(loop);
+
+            document.getElementById("webcam-container").appendChild(webcam.canvas);
+            labelContainer = document.getElementById("label-container");
+            buzzerSound = document.getElementById("buzzer");
+
+            // Wait for 10 seconds before starting predictions
+            resetScanning();
+        }
+
+        // Function to stop the webcam and reset UI
+        async function stopWebcam() {
+            if (webcam) {
+                isLoopActive = false; // Stop the loop
+                await webcam.stop();
+                document.getElementById("webcam-container").removeChild(webcam.canvas);
+
+                // Reset everything to initial state
+                labelContainer.innerHTML = ''; // Clear labels
+                document.querySelector('.box-container').style.backgroundColor = 'white'; // Reset background color
+                if (buzzerSound) {
+                    buzzerSound.pause();
+                    buzzerSound.currentTime = 0; // Stop buzzer and reset sound
+                }
+            }
+
+            // Reset the labels and the buzzer
+            document.querySelector('.box-container').style.backgroundColor = 'white'; // Reset background to white
+            labelContainer.innerHTML = ''; // Clear label text
+            stopBuzzer(); // Ensure buzzer is stopped
+        }
+
+        // Function to reset scanning with 10-second delay
+        function resetScanning() {
+            isScanning = true;
+            labelContainer.innerHTML = ''; // Clear result during the scan
+            document.querySelector('.box-container').style.backgroundColor = 'white';
+            setTimeout(() => {
+                isScanning = false;
+            }, 10000);
+        }
+
+        // Function to stop the buzzer and reset the UI
+        function stopBuzzer() {
+            if (buzzerSound) {
+                buzzerSound.pause();
+                buzzerSound.currentTime = 0;
+            }
+            resetScanning(); // Reset scanning and delay predictions for 10 seconds
+        }
+
+        // Continuous prediction loop
+        async function loop() {
+            if (!isLoopActive) return; // Stop the loop if not active
+
+            webcam.update();
+
+            // Only predict after 10 seconds of scanning
+            if (!isScanning) {
+                await predict(webcam.canvas);
+            }
+
+            window.requestAnimationFrame(loop);
+        }
+
+        async function predict(input) {
+            const prediction = await model.predict(input);
+            let highestVal = 0.00;
+            let bestClass = "";
+
+            // Find the class with the highest prediction
+            for (let i = 0; i < maxPredictions; i++) {
+                let classPrediction = prediction[i].probability.toFixed(2);
+                if (classPrediction > highestVal) {
+                    highestVal = classPrediction;
+                    bestClass = prediction[i].className;
+                }
+            }
+
+            let newLabel = document.createElement("div");
+
+            if (bestClass === "Ok") {
+                document.querySelector('.box-container').style.backgroundColor = 'lightgreen';
+                newLabel.className = "alert alert-success";
+            } else {
+                bestClass = "Not Ok"; // Doesn’t match the expected class
+                document.querySelector('.box-container').style.backgroundColor = 'lightcoral';
+                newLabel.className = "alert alert-danger";
+                // Play buzzer sound
+                if (buzzerSound && camera_on) { // Play only if the webcam is on
+                    buzzerSound.play();
+                }
+            }
+
+            newLabel.innerHTML = bestClass;
+            labelContainer.innerHTML = ''; // Clear previous label
+            labelContainer.appendChild(newLabel);
+        }
+
+    </script>
+</body>
+
+</html>
